@@ -16,7 +16,16 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # Global Model Singletons (Initializes only ONCE on startup)
 print(f"--- [RAG] Initializing Embeddings & LLM ({OLLAMA_MODEL}) ---")
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+
+# Choose Embedding Model based on Environment
+if os.getenv("OPENAI_API_KEY"):
+    from langchain_openai import OpenAIEmbeddings
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    print("--- [RAG] Using OpenAI Embeddings (Memory Efficient) ---")
+else:
+    from langchain_community.embeddings import HuggingFaceEmbeddings
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    print("--- [RAG] Using Local HuggingFace Embeddings ---")
 
 # Support for remote or local APIs
 if os.getenv("OPENAI_API_KEY"):

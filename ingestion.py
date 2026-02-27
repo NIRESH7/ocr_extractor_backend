@@ -138,8 +138,13 @@ def ingest_file(file_path: str, folder_name: str = "default", progress_callback=
     splits = text_splitter.split_documents(docs)
     print(f"--- [INGEST] Split into {len(splits)} chunks ---")
     
-    # 3. Embeddings
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    # 3. Embeddings (Choose based on env to save memory on Render)
+    if os.getenv("OPENAI_API_KEY"):
+        from langchain_openai import OpenAIEmbeddings
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    else:
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     
     # Use Singleton Client
     client = get_qdrant_client()
