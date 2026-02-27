@@ -121,6 +121,7 @@ def ingest_file(file_path: str, folder_name: str = "default", progress_callback=
         print(f"--- [INGEST] FAILURE: {msg} ---")
         return {"error": msg}
 
+    full_text_preview = " ".join([d.page_content[:100] for d in docs[:3]])
     preview_clean = full_text_preview.replace("\n", " ")
     print(f"--- [INGEST] Text Preview: {preview_clean}... ---")
     
