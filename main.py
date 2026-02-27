@@ -27,9 +27,13 @@ API_KEY_NAME = "X-API-KEY"
 API_KEY = os.getenv("API_KEY", "your-secret-key-change-me") # Default for local, set in env for cloud
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
-async def get_api_key(header_api_key: str = Depends(api_key_header)):
-    if header_api_key == API_KEY:
+async def get_api_key(header_api_key: str = Depends(api_key_header), request: Request = None):
+    # Allow local requests without API key for development convenience
+    is_local = request.client.host in ("127.0.0.1", "localhost") if request and request.client else False
+    
+    if is_local or header_api_key == API_KEY:
         return header_api_key
+    
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Could not validate credentials",
