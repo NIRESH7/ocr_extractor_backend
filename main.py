@@ -53,8 +53,7 @@ async def log_requests(request: Request, call_next):
 
 # Configuration matching other files
 COLLECTION_NAME = "local_documents"
-# Dynamic vector size based on embedding model
-VECTOR_SIZE = 1536 if os.getenv("OPENAI_API_KEY") else 384 
+VECTOR_SIZE = 384 # all-MiniLM-L6-v2
 
 @app.on_event("startup")
 def startup_event():
@@ -65,7 +64,7 @@ def startup_event():
         exists = any(c.name == COLLECTION_NAME for c in collections.collections)
         
         if exists:
-            # Check for dimension mismatch
+            # Check for dimension mismatch (e.g. if switching between OpenAI and Local)
             info = client.get_collection(COLLECTION_NAME)
             current_dim = info.config.params.vectors.size
             if current_dim != VECTOR_SIZE:

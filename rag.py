@@ -15,39 +15,21 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # Global Model Singletons (Initializes only ONCE on startup)
-print(f"--- [RAG] Initializing Embeddings & LLM ({OLLAMA_MODEL}) ---")
+print(f"--- [RAG] Initializing Local Embeddings & LLM (Ollama: {OLLAMA_MODEL}) ---")
 
-# Choose Embedding Model based on Environment
-if os.getenv("OPENAI_API_KEY"):
-    from langchain_openai import OpenAIEmbeddings
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-    print("--- [RAG] Using OpenAI Embeddings (Memory Efficient) ---")
-else:
-    from langchain_community.embeddings import HuggingFaceEmbeddings
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    print("--- [RAG] Using Local HuggingFace Embeddings ---")
+# Purely Local HuggingFace Embeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+print("--- [RAG] Using Local HuggingFace Embeddings (all-MiniLM-L6-v2) ---")
 
-# Support for remote or local APIs
-if os.getenv("OPENAI_API_KEY"):
-    from langchain_openai import ChatOpenAI
-    print("--- [RAG] Using OpenAI API ---")
-    llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
-elif os.getenv("OLLAMA_API_KEY") or OLLAMA_BASE_URL != "http://localhost:11434":
-    print(f"--- [RAG] Using Remote/Cloud Ollama at {OLLAMA_BASE_URL} ---")
-    llm = Ollama(
-        model=OLLAMA_MODEL,
-        base_url=OLLAMA_BASE_URL,
-        temperature=0,
-        num_predict=64
-    )
-else:
-    print("--- [RAG] Using Local Ollama ---")
-    llm = Ollama(
-        model=OLLAMA_MODEL,
-        temperature=0,
-        num_predict=64,
-        top_p=0.9
-    )
+# Purely Local Ollama
+print("--- [RAG] Using Local Ollama Engine ---")
+llm = Ollama(
+    model=OLLAMA_MODEL,
+    temperature=0,
+    num_predict=64,
+    top_p=0.9
+)
 print("--- [RAG] Models Loaded and Ready ---")
 
 def get_rag_chain(folder_name: str = None):
