@@ -53,23 +53,32 @@ async def log_requests(request: Request, call_next):
 
 # Configuration matching other files
 COLLECTION_NAME = "local_documents"
-VECTOR_SIZE = 384 # all-MiniLM-L6-v2
+# Dynamic vector size based on embedding model
+VECTOR_SIZE = 1536 if os.getenv("OPENAI_API_KEY") else 384 
 
 @app.on_event("startup")
 def startup_event():
-    print("--- [STARTUP] Checking Qdrant Collection ---")
+    print(f"--- [STARTUP] Checking Qdrant Collection (Size: {VECTOR_SIZE}) ---")
     try:
         client = get_qdrant_client()
         collections = client.get_collections()
         exists = any(c.name == COLLECTION_NAME for c in collections.collections)
         
+        if exists:
+            # Check for dimension mismatch
+            info = client.get_collection(COLLECTION_NAME)
+            current_dim = info.config.params.vectors.size
+            if current_dim != VECTOR_SIZE:
+                print(f"--- [STARTUP] Dimension Mismatch ({current_dim} vs {VECTOR_SIZE}). Recreating collection... ---")
+                client.delete_collection(COLLECTION_NAME)
+                exists = False
+
         if not exists:
-            print(f"--- [STARTUP] Collection '{COLLECTION_NAME}' not found. Creating... ---")
+            print(f"--- [STARTUP] Creating Collection '{COLLECTION_NAME}' with size {VECTOR_SIZE} ---")
             client.create_collection(
                 collection_name=COLLECTION_NAME,
                 vectors_config=models.VectorParams(size=VECTOR_SIZE, distance=models.Distance.COSINE),
             )
-            print(f"--- [STARTUP] Collection '{COLLECTION_NAME}' created successfully. ---")
         else:
             print(f"--- [STARTUP] Collection '{COLLECTION_NAME}' already exists. ---")
     except Exception as e:
