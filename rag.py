@@ -58,21 +58,20 @@ def get_rag_chain(folder_name: str = None):
     retriever = vector_store.as_retriever(search_kwargs=search_kwargs)
     
     # 4. Prompt
-    template = """[SYSTEM: EXTRACTION BOT]
-    1. EXCLUSIVELY use the JSON CONTEXT provided.
-    2. Respond with ONLY the raw value(s) requested.
-    3. NO intro ("The answer is..."), NO sentences, NO conversational filler.
-    4. If not found, say "Query not found in document."
-    5. Handle typos in user question by looking for semantic matches in context.
-
-    CONTEXT:
+    template = """You are a helpful assistant that answers questions based ONLY on the provided context.
+    
+    Rules:
+    - If you don't know the answer, say "Query not found in document."
+    - Answer the question directly and as briefly as possible.
+    - Do not explain yourself or use any introduction.
+    
+    Context:
     {context}
-
-    USER QUESTION:
+    
+    Question:
     {question}
-
-    FINAL OUTPUT (RAW VALUE ONLY):
-    """
+    
+    Answer:"""
     
     prompt = PromptTemplate.from_template(template)
     
@@ -89,49 +88,12 @@ def get_rag_chain(folder_name: str = None):
 import json
 import re
 
-def text_to_json_keys(text: str):
-    """Smarter OCR parsing: Pairs labels with values and removes 'unstructured' prefixes."""
-    data_dict = {}
+def clean_ocr_text(text: str):
+    """Clean and structure OCR text for the LLM and logging."""
+    # Remove weird characters and normalize spacing
+    text = re.sub(r'\[.*?\]', '', text) # Remove [CLIENT NAME] style placeholders
     lines = [l.strip() for l in text.split('\n') if l.strip()]
-    
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        
-        # Look for Key: Value or Key - Value
-        match = re.search(r'^(.{1,30}?)([:\-])\s*(.*)$', line)
-        if match:
-            key = match.group(1).strip()
-            val = match.group(3).strip()
-            if key and val:
-                data_dict[key] = val
-                i += 1
-                continue
-            elif key and not val and (i + 1 < len(lines)):
-                # Key on this line, Value on next?
-                next_line = lines[i+1]
-                data_dict[key] = next_line
-                i += 2
-                continue
-
-        # Look for typical headers or keys without colons (e.g. "Invoice Number")
-        # If the line is short and title-case/uppercase, treat as key for the next line
-        if len(line.split()) < 4 and i + 1 < len(lines):
-             next_val = lines[i+1]
-             # If next line is a number or date, it's definitely a pair
-             if re.search(r'[\d]', next_val):
-                 data_dict[line] = next_val
-                 i += 2
-                 continue
-
-        # Fallback: Just put the line as its own key/value if short
-        if len(line.split()) < 6:
-            data_dict[line] = "---"
-        else:
-            data_dict[f"info_{i}"] = line
-        i += 1
-                 
-    return data_dict
+    return "\n".join(lines)
 
 def query_rag(question: str, folder_name: str = None):
     print("\n" + "🚀 " + "="*60)
@@ -146,37 +108,36 @@ def query_rag(question: str, folder_name: str = None):
         if not docs:
             return "Query not found in document."
 
-        # STEP 2: JSON EXTRACTION FOR LOGGING
-        structured_logs = []
+        # STEP 2: SHOW DATA TO USER IN BACKEND
+        print("\n" + "╔" + "═"*58 + "╗")
+        print("║" + " SOURCE DATA EXTRACTED FROM DOCUMENT ".center(58) + "║")
+        print("╠" + "═"*58 + "╢")
+        
+        found_data = []
         for i, doc in enumerate(docs):
-            kv_pairs = text_to_json_keys(doc.page_content)
-            structured_logs.append({
+            cleaned_text = clean_ocr_text(doc.page_content)
+            found_data.append({
                 "chunk": i + 1,
                 "file": os.path.basename(doc.metadata.get("source", "unknown")),
-                "data": kv_pairs
+                "text": cleaned_text
             })
+            print(f"📄 CHUNK {i+1} ({found_data[-1]['file']}):")
+            print(f"--------------------------------------------------")
+            print(cleaned_text)
+            print(f"--------------------------------------------------\n")
 
-        # PRINT CLEAN JSON TO CONSOLE
-        print("\n" + "╔" + "═"*58 + "╗")
-        print("║" + " SOURCE DATA (STRUCTURED JSON) ".center(58) + "║")
-        print("╠" + "═"*58 + "╢")
-        print(json.dumps(structured_logs, indent=2))
         print("╚" + "═"*58 + "╝")
 
-        context_str = json.dumps([s["data"] for s in structured_logs])
+        context_str = "\n".join([d["text"] for d in found_data])
 
         # STEP 3: GENERATION
         result = chain.invoke({"context": context_str, "question": question})
         
-        # CLEANUP: Remove any remaining bot filler (Ollama sometimes adds intro text)
         clean_ans = result.strip()
-        # If it looks like a sentence start, cut it (heuristic)
-        if clean_ans.lower().startswith("the "):
-            clean_ans = clean_ans.split(" is ", 1)[-1] if " is " in clean_ans else clean_ans
         
-        # LOG FINAL ANSWER
+        # LOG FINAL ANSWER AS JSON FOR USER
         print("\n" + "╔" + "═"*58 + "╗")
-        print("║" + " ENGINE EXTRACTION (FINAL) ".center(58) + "║")
+        print("║" + " ENGINE FINAL ANSWER ".center(58) + "║")
         print("╠" + "═"*58 + "╢")
         print(json.dumps({"question": question, "answer": clean_ans}, indent=2))
         print("╚" + "═"*58 + "╝\n")

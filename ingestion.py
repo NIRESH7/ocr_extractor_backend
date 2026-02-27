@@ -132,8 +132,8 @@ def ingest_file(file_path: str, folder_name: str = "default", progress_callback=
     
     # 2. Split
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=100
+        chunk_size=1000,
+        chunk_overlap=200
     )
     splits = text_splitter.split_documents(docs)
     print(f"--- [INGEST] Split into {len(splits)} chunks ---")
