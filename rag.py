@@ -58,23 +58,20 @@ def get_rag_chain(folder_name: str = None):
     retriever = vector_store.as_retriever(search_kwargs=search_kwargs)
     
     # 4. Prompt
-    template = """You are a 1000% ACCURATE Extraction Engine.
-    
-    SYSTEM DIRECTIVES:
-    - Interpret the USER QUESTION even if it has spelling mistakes or typos.
-    - Use ONLY the provided CONTEXT.
-    - If the answer is not in the CONTEXT, say: "Query not found in document."
-    
-    CONTEXT DATA (JSON Structure):
+    template = """[SYSTEM: EXTRACTION BOT]
+    1. EXCLUSIVELY use the JSON CONTEXT provided.
+    2. Respond with ONLY the raw value(s) requested.
+    3. NO intro ("The answer is..."), NO sentences, NO conversational filler.
+    4. If not found, say "Query not found in document."
+    5. Handle typos in user question by looking for semantic matches in context.
+
+    CONTEXT:
     {context}
-    
+
     USER QUESTION:
     {question}
-    
-    MANDATORY OUTPUT FORMAT:
-    - Answer should be concise.
-    - No conversational filler (No "Based on the context", No "Sure").
-    - Provide only the exact data requested.
+
+    FINAL OUTPUT (RAW VALUE ONLY):
     """
     
     prompt = PromptTemplate.from_template(template)
@@ -90,74 +87,102 @@ def get_rag_chain(folder_name: str = None):
     return retriever, rag_chain
 
 import json
+import re
+
+def text_to_json_keys(text: str):
+    """Smarter OCR parsing: Pairs labels with values and removes 'unstructured' prefixes."""
+    data_dict = {}
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        
+        # Look for Key: Value or Key - Value
+        match = re.search(r'^(.{1,30}?)([:\-])\s*(.*)$', line)
+        if match:
+            key = match.group(1).strip()
+            val = match.group(3).strip()
+            if key and val:
+                data_dict[key] = val
+                i += 1
+                continue
+            elif key and not val and (i + 1 < len(lines)):
+                # Key on this line, Value on next?
+                next_line = lines[i+1]
+                data_dict[key] = next_line
+                i += 2
+                continue
+
+        # Look for typical headers or keys without colons (e.g. "Invoice Number")
+        # If the line is short and title-case/uppercase, treat as key for the next line
+        if len(line.split()) < 4 and i + 1 < len(lines):
+             next_val = lines[i+1]
+             # If next line is a number or date, it's definitely a pair
+             if re.search(r'[\d]', next_val):
+                 data_dict[line] = next_val
+                 i += 2
+                 continue
+
+        # Fallback: Just put the line as its own key/value if short
+        if len(line.split()) < 6:
+            data_dict[line] = "---"
+        else:
+            data_dict[f"info_{i}"] = line
+        i += 1
+                 
+    return data_dict
 
 def query_rag(question: str, folder_name: str = None):
     print("\n" + "🚀 " + "="*60)
-    print(f"--- [RAG] NEW USER QUERY RECEIVED ---")
-    print(f"--- [QUESTION]: {question}")
+    print(f"--- [RAG] NEW USER QUERY ---".center(60))
+    print(f"--- [QUESTION]: {question} ---".center(60))
     print("="*60)
     
-    start_time = time.time()
-    
-    # STEP 1: RETRIEVAL
-    print(f"\n🔍 [STEP 1/4]: Searching document database...")
-    retriever, chain = get_rag_chain(folder_name)
-    
     try:
+        retriever, chain = get_rag_chain(folder_name)
         docs = retriever.invoke(question)
+        
         if not docs:
-            print(f"❌ [RAG] No documents found.")
-            return "Data not found in document."
-            
-        # STEP 2: JSON EXTRACTION & LOGGING
-        print(f"\n📦 [STEP 2/4]: Converting retrieved data to JSON structure...")
-        extracted_data = []
-        for doc in docs:
-            extracted_data.append({
-                "content": doc.page_content.strip(),
-                "metadata": doc.metadata
-            })
-        
-        # PRINT JSON TO BACKEND CONSOLE
-        print("\n" + "╔" + "═"*58 + "╗")
-        print("║" + " RETRIEVED DATA (STRUCTURAL JSON) ".center(58) + "║")
-        print("╠" + "═"*58 + "╢")
-        print(json.dumps(extracted_data, indent=2))
-        print("╚" + "═"*58 + "╝")
-        
-        context_str = json.dumps(extracted_data)
-        
-    except Exception as e:
-        print(f"❌ [RAG ERROR] Retrieval failed: {e}")
-        return "Error accessing document database."
+            return "Query not found in document."
 
-    # STEP 3: GENERATION
-    print(f"\n🧠 [STEP 3/4]: Analyzing User Intent & Generating 1000% Accurate Reply...")
-    
-    try:
+        # STEP 2: JSON EXTRACTION FOR LOGGING
+        structured_logs = []
+        for i, doc in enumerate(docs):
+            kv_pairs = text_to_json_keys(doc.page_content)
+            structured_logs.append({
+                "chunk": i + 1,
+                "file": os.path.basename(doc.metadata.get("source", "unknown")),
+                "data": kv_pairs
+            })
+
+        # PRINT CLEAN JSON TO CONSOLE
+        print("\n" + "╔" + "═"*58 + "╗")
+        print("║" + " SOURCE DATA (STRUCTURED JSON) ".center(58) + "║")
+        print("╠" + "═"*58 + "╢")
+        print(json.dumps(structured_logs, indent=2))
+        print("╚" + "═"*58 + "╝")
+
+        context_str = json.dumps([s["data"] for s in structured_logs])
+
+        # STEP 3: GENERATION
         result = chain.invoke({"context": context_str, "question": question})
+        
+        # CLEANUP: Remove any remaining bot filler (Ollama sometimes adds intro text)
+        clean_ans = result.strip()
+        # If it looks like a sentence start, cut it (heuristic)
+        if clean_ans.lower().startswith("the "):
+            clean_ans = clean_ans.split(" is ", 1)[-1] if " is " in clean_ans else clean_ans
+        
+        # LOG FINAL ANSWER
+        print("\n" + "╔" + "═"*58 + "╗")
+        print("║" + " ENGINE EXTRACTION (FINAL) ".center(58) + "║")
+        print("╠" + "═"*58 + "╢")
+        print(json.dumps({"question": question, "answer": clean_ans}, indent=2))
+        print("╚" + "═"*58 + "╝\n")
+
+        return clean_ans
+
     except Exception as e:
-        print(f"❌ [RAG ERROR] Generation failed: {e}")
-        return "Error generating response."
-    
-    end_time = time.time()
-    total_time = end_time - start_time
-    
-    # STEP 4: FINALstructured LOGGING
-    print(f"\n✨ [STEP 4/4]: Response Ready ({total_time:.2f}s).")
-    
-    # BOT REPLY AS JSON (Log only)
-    bot_json = {
-        "user_question": question,
-        "raw_answer": result,
-        "status": "Verified",
-        "accuracy_score": "1000% (Grounded)"
-    }
-    
-    print("\n" + "╔" + "═"*58 + "╗")
-    print("║" + " FINAL BOT REPLY (JSON STRUCTURE) ".center(58) + "║")
-    print("╠" + "═"*58 + "╢")
-    print(json.dumps(bot_json, indent=2))
-    print("╚" + "═"*58 + "╝\n")
-    
-    return result
+        print(f"--- [RAG ERROR]: {e} ---")
+        return "Error in extraction node."
