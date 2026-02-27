@@ -10,7 +10,7 @@ from langchain_core.documents import Document
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
-# Configuration
+# Configuration for Render Cloud Deployment
 COLLECTION_NAME = "local_documents"
 
 from langchain_community.document_loaders import PDFPlumberLoader, TextLoader, Docx2txtLoader
