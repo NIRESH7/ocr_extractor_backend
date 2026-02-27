@@ -145,18 +145,27 @@ def ingest_file(file_path: str, folder_name: str = "default", progress_callback=
     # Use Singleton Client
     client = get_qdrant_client()
     
-    # Check pre-ingest count
-    try:
-        pre_count = client.count(collection_name=COLLECTION_NAME).count
-    except Exception:
-        pre_count = 0
-
     # Using the modern QdrantVectorStore
     qdrant = QdrantVectorStore(
         client=client,
         embedding=embeddings,
         collection_name=COLLECTION_NAME,
     )
+    
+    # LOG INGESTION AS JSON
+    ingestion_log = {
+        "filename": os.path.basename(file_path),
+        "folder": folder_name,
+        "num_chunks": len(splits),
+        "ocr_used": used_ocr,
+        "first_chunk_preview": splits[0].page_content[:150] if splits else ""
+    }
+    
+    print("\n" + "╔" + "═"*58 + "╗")
+    print("║" + " INGESTION DATA (JSON LOG) ".center(58) + "║")
+    print("╠" + "═"*58 + "╢")
+    print(json.dumps(ingestion_log, indent=2))
+    print("╚" + "═"*58 + "╝\n")
     
     print(f"--- [INGEST] Adding {len(splits)} documents to Qdrant ---")
     qdrant.add_documents(splits)
@@ -168,7 +177,6 @@ def ingest_file(file_path: str, folder_name: str = "default", progress_callback=
         post_count = 0
     
     status_msg = "Ingested (OCR)" if used_ocr else "Ingested"
-
     print(f"--- [INGEST] Success! Documents added to Qdrant. ---")
     
     return {
@@ -177,3 +185,5 @@ def ingest_file(file_path: str, folder_name: str = "default", progress_callback=
         "total_vectors": post_count,
         "ocr_used": used_ocr
     }
+
+import json
