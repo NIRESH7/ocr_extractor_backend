@@ -11,17 +11,30 @@ from database import get_qdrant_client
 
 # Configuration
 COLLECTION_NAME = "local_documents"
-OLLAMA_MODEL = "llama3.2:1b"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # Global Model Singletons (Initializes only ONCE on startup)
-print("--- [RAG] Initializing Embeddings & LLM (Wait for it...) ---")
+print(f"--- [RAG] Initializing Embeddings & LLM ({OLLAMA_MODEL}) ---")
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-llm = Ollama(
-    model=OLLAMA_MODEL,
-    temperature=0,
-    num_predict=64,
-    top_p=0.9
-)
+
+# Support for remote or local Ollama
+if os.getenv("OLLAMA_API_KEY") or OLLAMA_BASE_URL != "http://localhost:11434":
+    print(f"--- [RAG] Using Remote/Cloud Ollama at {OLLAMA_BASE_URL} ---")
+    llm = Ollama(
+        model=OLLAMA_MODEL,
+        base_url=OLLAMA_BASE_URL,
+        temperature=0,
+        num_predict=64
+    )
+else:
+    print("--- [RAG] Using Local Ollama ---")
+    llm = Ollama(
+        model=OLLAMA_MODEL,
+        temperature=0,
+        num_predict=64,
+        top_p=0.9
+    )
 print("--- [RAG] Models Loaded and Ready ---")
 
 def get_rag_chain(folder_name: str = None):
