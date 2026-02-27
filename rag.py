@@ -18,8 +18,12 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 print(f"--- [RAG] Initializing Embeddings & LLM ({OLLAMA_MODEL}) ---")
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
-# Support for remote or local Ollama
-if os.getenv("OLLAMA_API_KEY") or OLLAMA_BASE_URL != "http://localhost:11434":
+# Support for remote or local APIs
+if os.getenv("OPENAI_API_KEY"):
+    from langchain_openai import ChatOpenAI
+    print("--- [RAG] Using OpenAI API ---")
+    llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
+elif os.getenv("OLLAMA_API_KEY") or OLLAMA_BASE_URL != "http://localhost:11434":
     print(f"--- [RAG] Using Remote/Cloud Ollama at {OLLAMA_BASE_URL} ---")
     llm = Ollama(
         model=OLLAMA_MODEL,
